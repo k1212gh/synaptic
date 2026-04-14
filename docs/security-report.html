@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Synaptic — 취약점 분석 보고서</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e2e8f0; line-height: 1.6; }
+
+  .header { background: linear-gradient(135deg, #1a1f2e 0%, #0f1117 100%); border-bottom: 1px solid #2d3748; padding: 40px 48px; }
+  .header h1 { font-size: 28px; font-weight: 700; color: #fff; margin-bottom: 8px; }
+  .header p { color: #718096; font-size: 14px; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; margin-left: 12px; }
+  .badge-date { background: #2d3748; color: #a0aec0; }
+
+  .container { max-width: 1200px; margin: 0 auto; padding: 40px 48px; }
+
+  /* 요약 카드 */
+  .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 48px; }
+  .summary-card { background: #1a1f2e; border: 1px solid #2d3748; border-radius: 12px; padding: 20px 24px; }
+  .summary-card .number { font-size: 36px; font-weight: 800; line-height: 1; margin-bottom: 4px; }
+  .summary-card .label { font-size: 13px; color: #718096; }
+  .c-critical .number { color: #fc8181; }
+  .c-high .number { color: #f6ad55; }
+  .c-medium .number { color: #faf089; }
+  .c-low .number { color: #68d391; }
+
+  /* 차트 바 */
+  .chart-section { background: #1a1f2e; border: 1px solid #2d3748; border-radius: 12px; padding: 28px; margin-bottom: 32px; }
+  .chart-section h2 { font-size: 16px; font-weight: 600; margin-bottom: 24px; color: #e2e8f0; }
+  .bar-group { margin-bottom: 14px; }
+  .bar-label { font-size: 13px; color: #a0aec0; margin-bottom: 6px; display: flex; justify-content: space-between; }
+  .bar-track { background: #2d3748; border-radius: 4px; height: 8px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
+  .bar-security { background: linear-gradient(90deg, #fc8181, #f6ad55); }
+  .bar-perf { background: linear-gradient(90deg, #63b3ed, #4299e1); }
+  .bar-cost { background: linear-gradient(90deg, #68d391, #38a169); }
+  .bar-error { background: linear-gradient(90deg, #b794f4, #805ad5); }
+
+  /* 레이더 차트 (SVG) */
+  .chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px; }
+
+  /* 취약점 카드 */
+  .section-title { font-size: 18px; font-weight: 700; color: #e2e8f0; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid #2d3748; }
+  .vuln-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 40px; }
+  .vuln-card { background: #1a1f2e; border: 1px solid #2d3748; border-radius: 10px; padding: 20px 24px; border-left: 4px solid transparent; }
+  .vuln-card.critical { border-left-color: #fc8181; }
+  .vuln-card.high { border-left-color: #f6ad55; }
+  .vuln-card.medium { border-left-color: #faf089; }
+  .vuln-card.low { border-left-color: #68d391; }
+
+  .vuln-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+  .vuln-title { font-size: 15px; font-weight: 600; color: #e2e8f0; }
+  .severity-badge { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+  .severity-critical { background: #742a2a; color: #fc8181; }
+  .severity-high { background: #7b341e; color: #f6ad55; }
+  .severity-medium { background: #744210; color: #faf089; }
+  .severity-low { background: #1c4532; color: #68d391; }
+  .category-badge { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; background: #2d3748; color: #a0aec0; }
+
+  .file-ref { font-size: 12px; color: #63b3ed; font-family: 'SF Mono', Monaco, monospace; margin-bottom: 8px; }
+  .vuln-desc { font-size: 13px; color: #a0aec0; margin-bottom: 10px; }
+  .fix-box { background: #0f1117; border: 1px solid #2d3748; border-radius: 6px; padding: 12px 14px; font-size: 12px; color: #68d391; font-family: 'SF Mono', Monaco, monospace; white-space: pre-wrap; }
+  .fix-label { font-size: 11px; color: #718096; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* 우선순위 로드맵 */
+  .roadmap { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 40px; }
+  .roadmap-col { background: #1a1f2e; border: 1px solid #2d3748; border-radius: 10px; padding: 20px; }
+  .roadmap-col h3 { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+  .roadmap-col .subtitle { font-size: 11px; color: #718096; margin-bottom: 16px; }
+  .roadmap-item { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 10px; font-size: 13px; color: #a0aec0; }
+  .roadmap-item::before { content: "→"; color: #4299e1; flex-shrink: 0; margin-top: 1px; }
+  .p0 h3 { color: #fc8181; }
+  .p1 h3 { color: #f6ad55; }
+  .p2 h3 { color: #68d391; }
+
+  /* 비용 섹션 */
+  .cost-table { width: 100%; border-collapse: collapse; margin-bottom: 32px; font-size: 13px; }
+  .cost-table th { background: #2d3748; color: #a0aec0; padding: 10px 14px; text-align: left; font-weight: 600; }
+  .cost-table td { padding: 10px 14px; border-bottom: 1px solid #2d3748; color: #e2e8f0; }
+  .cost-table tr:hover td { background: #1a1f2e; }
+  .impact-high { color: #fc8181; }
+  .impact-med { color: #f6ad55; }
+  .impact-low { color: #68d391; }
+
+  .footer { text-align: center; padding: 32px; color: #4a5568; font-size: 12px; border-top: 1px solid #2d3748; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Synaptic — 취약점 분석 보고서 <span class="badge badge-date">2026-04-14</span></h1>
+  <p>보안 · 탐색 효율 · 비용 효율 · 에러 처리 전반 분석 | 총 15개 이슈 발견</p>
+</div>
+
+<div class="container">
+
+  <!-- 요약 카드 -->
+  <div class="summary-grid">
+    <div class="summary-card c-critical">
+      <div class="number">1</div>
+      <div class="label">CRITICAL</div>
+    </div>
+    <div class="summary-card c-high">
+      <div class="number">5</div>
+      <div class="label">HIGH</div>
+    </div>
+    <div class="summary-card c-medium">
+      <div class="number">7</div>
+      <div class="label">MEDIUM</div>
+    </div>
+    <div class="summary-card c-low">
+      <div class="number">2</div>
+      <div class="label">LOW</div>
+    </div>
+  </div>
+
+  <!-- 차트 -->
+  <div class="chart-row">
+    <div class="chart-section">
+      <h2>카테고리별 이슈 분포</h2>
+      <div class="bar-group">
+        <div class="bar-label"><span>보안 (Security)</span><span>7개</span></div>
+        <div class="bar-track"><div class="bar-fill bar-security" style="width:47%"></div></div>
+      </div>
+      <div class="bar-group">
+        <div class="bar-label"><span>성능 (Performance)</span><span>3개</span></div>
+        <div class="bar-track"><div class="bar-fill bar-perf" style="width:20%"></div></div>
+      </div>
+      <div class="bar-group">
+        <div class="bar-label"><span>비용 (Cost)</span><span>2개</span></div>
+        <div class="bar-track"><div class="bar-fill bar-cost" style="width:13%"></div></div>
+      </div>
+      <div class="bar-group">
+        <div class="bar-label"><span>에러 처리 (Error Handling)</span><span>3개</span></div>
+        <div class="bar-track"><div class="bar-fill bar-error" style="width:20%"></div></div>
+      </div>
+    </div>
+
+    <div class="chart-section">
+      <h2>심각도별 파일 히트맵</h2>
+      <div class="bar-group">
+        <div class="bar-label"><span>auth/notion/callback/route.ts</span><span>3건</span></div>
+        <div class="bar-track"><div class="bar-fill bar-security" style="width:100%"></div></div>
+      </div>
+      <div class="bar-group">
+        <div class="bar-label"><span>lib/notion/fetcher.ts</span><span>2건</span></div>
+        <div class="bar-track"><div class="bar-fill bar-security" style="width:67%"></div></div>
+      </div>
+      <div class="bar-group">
+        <div class="bar-label"><span>api/query/route.ts</span><span>2건</span></div>
+        <div class="bar-track"><div class="bar-fill bar-perf" style="width:67%"></div></div>
+      </div>
+      <div class="bar-group">
+        <div class="bar-label"><span>lib/graph/edges.ts</span><span>1건</span></div>
+        <div class="bar-track"><div class="bar-fill bar-perf" style="width:33%"></div></div>
+      </div>
+      <div class="bar-group">
+        <div class="bar-label"><span>lib/crypto/token.ts</span><span>2건</span></div>
+        <div class="bar-track"><div class="bar-fill bar-security" style="width:67%"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 보안 취약점 -->
+  <div class="section-title">보안 취약점 (7개)</div>
+  <div class="vuln-list">
+
+    <div class="vuln-card critical">
+      <div class="vuln-header">
+        <span class="severity-badge severity-critical">CRITICAL</span>
+        <span class="category-badge">보안</span>
+        <span class="vuln-title">암호화 키 단일 마스터 키 — 로테이션 불가</span>
+      </div>
+      <div class="file-ref">src/lib/crypto/token.ts:5</div>
+      <div class="vuln-desc">TOKEN_ENCRYPTION_KEY 하나로 모든 사용자 Notion 토큰을 암호화. 키 유출 시 전체 사용자 토큰 일괄 복호화 가능. 키 로테이션 메커니즘 없음.</div>
+      <div class="fix-label">권장 해결책</div>
+      <div class="fix-box">// 사용자별 파생 키 사용
+const KEY = crypto.scryptSync(
+  env.TOKEN_ENCRYPTION_KEY + userId,  // 사용자별 솔트
+  "synaptic-token-v1",
+  32
+);</div>
+    </div>
+
+    <div class="vuln-card high">
+      <div class="vuln-header">
+        <span class="severity-badge severity-high">HIGH</span>
+        <span class="category-badge">보안</span>
+        <span class="vuln-title">decrypt() 입력 길이 검증 없음</span>
+      </div>
+      <div class="file-ref">src/lib/crypto/token.ts:16-24</div>
+      <div class="vuln-desc">악의적으로 짧은 base64 문자열 입력 시 subarray(0,12), subarray(12,28) 범위가 비어서 빈 IV/태그로 복호화 시도. 에러 메시지로 내부 구조 추론 가능.</div>
+      <div class="fix-label">권장 해결책</div>
+      <div class="fix-box">export function decrypt(blob: string): string {
+  const buf = Buffer.from(blob, "base64");
+  if (buf.length < 28) throw new Error("ERR_INVALID_TOKEN");
+  // 이하 동일
+}</div>
+    </div>
+
+    <div class="vuln-card high">
+      <div class="vuln-header">
+        <span class="severity-badge severity-high">HIGH</span>
+        <span class="category-badge">보안</span>
+        <span class="vuln-title">OAuth 콜백 — 사용자 ID 바인딩 없음</span>
+      </div>
+      <div class="file-ref">src/app/api/auth/notion/callback/route.ts:56-68</div>
+      <div class="vuln-desc">state 쿠키가 탈취되면 공격자가 피해자 계정에 자신의 Notion 토큰을 바인딩 가능. state에 user.id를 암호화해서 포함해야 함.</div>
+      <div class="fix-label">권장 해결책</div>
+      <div class="fix-box">// start/route.ts: state에 userId 포함
+const state = encrypt(JSON.stringify({ nonce: randomHex, userId: user.id }));
+
+// callback/route.ts: state 복호화 후 userId 검증
+const { nonce, userId } = JSON.parse(decrypt(savedState));
+if (userId !== user.id) return 400;</div>
+    </div>
+
+    <div class="vuln-card high">
+      <div class="vuln-header">
+        <span class="severity-badge severity-high">HIGH</span>
+        <span class="category-badge">보안</span>
+        <span class="vuln-title">쿼리 임베딩 캐시 없음 — 비용 폭탄 위험</span>
+      </div>
+      <div class="file-ref">src/app/api/query/route.ts:31</div>
+      <div class="vuln-desc">동일 질문이 들어와도 매번 Voyage API 호출. Rate limit(분당 20회)이 있지만 20명이 같은 질문 반복 시 20배 비용 발생.</div>
+      <div class="fix-label">권장 해결책</div>
+      <div class="fix-box">// Redis에 질문 해시 → 임베딩 캐싱 (TTL 24h)
+const cacheKey = `emb:${crypto.hash("sha256", question)}`;
+const cached = await redis.get(cacheKey);
+const qvec = cached ?? (await embed([question]))[0];
+if (!cached) await redis.set(cacheKey, qvec, { ex: 86400 });</div>
+    </div>
+
+    <div class="vuln-card medium">
+      <div class="vuln-header">
+        <span class="severity-badge severity-medium">MEDIUM</span>
+        <span class="category-badge">보안</span>
+        <span class="vuln-title">OAuth start 엔드포인트 Rate limit 없음</span>
+      </div>
+      <div class="file-ref">src/app/api/auth/notion/start/route.ts</div>
+      <div class="vuln-desc">인증 없이 누구나 호출 가능. 반복 호출로 state 쿠키를 지속적으로 덮어쓸 수 있음. IP 기반 Rate limit 필요.</div>
+    </div>
+
+    <div class="vuln-card medium">
+      <div class="vuln-header">
+        <span class="severity-badge severity-medium">MEDIUM</span>
+        <span class="category-badge">보안</span>
+        <span class="vuln-title">API 에러 응답 정보 과다 노출</span>
+      </div>
+      <div class="file-ref">src/app/api/auth/notion/callback/route.ts:70 외 다수</div>
+      <div class="vuln-desc">ERR_DB_UPSERT, ERR_NO_TOKEN 등 내부 구조를 드러내는 에러 코드를 그대로 반환. Sentry로만 상세 로그 전송하고 사용자에게는 일반 코드만 노출해야 함.</div>
+    </div>
+
+    <div class="vuln-card medium">
+      <div class="vuln-header">
+        <span class="severity-badge severity-medium">MEDIUM</span>
+        <span class="category-badge">보안</span>
+        <span class="vuln-title">Notion 토큰 만료 감지 없음</span>
+      </div>
+      <div class="file-ref">src/lib/notion/fetcher.ts:8-10</div>
+      <div class="vuln-desc">Notion 토큰 만료 시 401을 처리하지 않아 동기화가 조용히 실패. 사용자는 재인증 필요 여부를 알 수 없음.</div>
+    </div>
+
+  </div>
+
+  <!-- 성능 취약점 -->
+  <div class="section-title">탐색/성능 취약점 (3개)</div>
+  <div class="vuln-list">
+
+    <div class="vuln-card high">
+      <div class="vuln-header">
+        <span class="severity-badge severity-high">HIGH</span>
+        <span class="category-badge">성능</span>
+        <span class="vuln-title">엣지 계산 O(n²) — N+1 쿼리</span>
+      </div>
+      <div class="file-ref">src/lib/graph/edges.ts:18-39</div>
+      <div class="vuln-desc">청크 1개당 match_chunks RPC 1회 호출. 1,000개 청크 → 1,000번 DB 호출. 10,000개 청크 → 10,000번. 실서비스에서 타임아웃 확실.</div>
+      <div class="fix-label">권장 해결책</div>
+      <div class="fix-box">-- 단일 SQL로 전체 유저 엣지 계산
+CREATE FUNCTION compute_edges_batch(uid uuid, k int, threshold float)
+RETURNS TABLE(from_id uuid, to_id uuid, sim float) AS $$
+  SELECT c1.id, c2.id, 1-(c1.embedding <=> c2.embedding)
+  FROM chunks c1, chunks c2
+  JOIN pages p ON p.id = c1.page_id
+  WHERE p.user_id = uid AND c1.id < c2.id
+    AND 1-(c1.embedding <=> c2.embedding) > threshold
+  ORDER BY sim DESC LIMIT k * (SELECT count(*) FROM chunks...)
+$$ LANGUAGE sql;</div>
+    </div>
+
+    <div class="vuln-card medium">
+      <div class="vuln-header">
+        <span class="severity-badge severity-medium">MEDIUM</span>
+        <span class="category-badge">성능</span>
+        <span class="vuln-title">그래프 API — 전체 엣지 메모리 로드</span>
+      </div>
+      <div class="file-ref">src/app/api/graph/data/route.ts:48-66</div>
+      <div class="vuln-desc">모든 semantic_edges를 메모리로 가져온 후 JS에서 집계. 엣지 10만개 시 응답 10초 이상, 메모리 스파이크. DB에서 집계 후 반환해야 함.</div>
+    </div>
+
+    <div class="vuln-card medium">
+      <div class="vuln-header">
+        <span class="severity-badge severity-medium">MEDIUM</span>
+        <span class="category-badge">성능</span>
+        <span class="vuln-title">컨텍스트 없을 때도 Claude 호출</span>
+      </div>
+      <div class="file-ref">src/app/api/query/route.ts:40-57</div>
+      <div class="vuln-desc">match_chunks 결과가 0개여도 Claude API를 호출. 빈 컨텍스트로 Claude가 일반 지식 기반 답변 생성 → 정확성 저하 + 불필요한 API 비용.</div>
+      <div class="fix-label">권장 해결책</div>
+      <div class="fix-box">if (ctxList.length === 0) {
+  return Response.json({
+    answer: "관련 노션 페이지를 찾지 못했습니다. 다른 키워드로 시도해주세요.",
+    sources: []
+  });
+}</div>
+    </div>
+
+  </div>
+
+  <!-- 비용 효율 -->
+  <div class="section-title">비용 효율성 이슈 (2개)</div>
+  <div class="vuln-list">
+
+    <div class="vuln-card medium">
+      <div class="vuln-header">
+        <span class="severity-badge severity-medium">MEDIUM</span>
+        <span class="category-badge">비용</span>
+        <span class="vuln-title">동기화마다 사용자 토큰 N번 재조회</span>
+      </div>
+      <div class="file-ref">src/lib/sync/processPage.ts:19-23</div>
+      <div class="vuln-desc">1,000페이지 동기화 시 users 테이블에서 1,000번 같은 row 조회. sync/start에서 한 번 가져와서 processPage에 전달하면 해결.</div>
+    </div>
+
+    <div class="vuln-card low">
+      <div class="vuln-header">
+        <span class="severity-badge severity-low">LOW</span>
+        <span class="category-badge">비용</span>
+        <span class="vuln-title">Claude 응답 캐싱 없음</span>
+      </div>
+      <div class="file-ref">src/app/api/query/route.ts</div>
+      <div class="vuln-desc">Redis가 있지만 Claude 응답을 캐시하지 않음. 동일 질문에 매번 Haiku 호출. 질문+컨텍스트 해시 기반으로 Redis TTL 캐싱 권장.</div>
+    </div>
+
+  </div>
+
+  <!-- 에러 처리 -->
+  <div class="section-title">에러 처리 누락 (3개)</div>
+  <div class="vuln-list">
+
+    <div class="vuln-card high">
+      <div class="vuln-header">
+        <span class="severity-badge severity-high">HIGH</span>
+        <span class="category-badge">에러 처리</span>
+        <span class="vuln-title">Notion API 429 — 지수 백오프 없음</span>
+      </div>
+      <div class="file-ref">src/lib/notion/fetcher.ts:18-28</div>
+      <div class="vuln-desc">고정 350ms 딜레이만 있음. Notion이 429 반환하면 에러로 중단. 대규모 워크스페이스(500페이지+) 동기화 시 반드시 발생.</div>
+      <div class="fix-label">권장 해결책</div>
+      <div class="fix-box">async function withRetry&lt;T&gt;(fn: () =&gt; Promise&lt;T&gt;): Promise&lt;T&gt; {
+  for (let i = 0; i &lt; 3; i++) {
+    try { return await fn(); }
+    catch (e: any) {
+      if (e?.status === 429) {
+        await sleep(Math.pow(2, i) * 1000); // 1s, 2s, 4s
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw new Error("MAX_RETRIES");
+}</div>
+    </div>
+
+    <div class="vuln-card medium">
+      <div class="vuln-header">
+        <span class="severity-badge severity-medium">MEDIUM</span>
+        <span class="category-badge">에러 처리</span>
+        <span class="vuln-title">QStash 부분 실패 시 재시도 없음</span>
+      </div>
+      <div class="file-ref">src/lib/queue/index.ts:39-47</div>
+      <div class="vuln-desc">Promise.allSettled로 결과 확인하지만 실패한 job을 재시도하거나 DB에 기록하지 않음. 조용히 누락됨.</div>
+    </div>
+
+    <div class="vuln-card medium">
+      <div class="vuln-header">
+        <span class="severity-badge severity-medium">MEDIUM</span>
+        <span class="category-badge">에러 처리</span>
+        <span class="vuln-title">Voyage embed 실패 시 재시도 없음</span>
+      </div>
+      <div class="file-ref">src/lib/embedding/voyage.ts:11-15</div>
+      <div class="vuln-desc">임베딩 배치 실패 시 전체 processPage가 중단. 해당 청크들이 DB에 저장되지 않아 조용히 누락. 최소 3회 재시도 필요.</div>
+    </div>
+
+  </div>
+
+  <!-- 비용 분석 테이블 -->
+  <div class="section-title">비용 시뮬레이션 (월 100명 유저 기준)</div>
+  <table class="cost-table">
+    <thead>
+      <tr>
+        <th>항목</th>
+        <th>현재</th>
+        <th>최적화 후</th>
+        <th>절감률</th>
+        <th>영향도</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Voyage 임베딩 (동기화)</td>
+        <td>$0.0 (무료 티어)</td>
+        <td>$0.0</td>
+        <td>—</td>
+        <td class="impact-low">LOW</td>
+      </tr>
+      <tr>
+        <td>Claude Haiku (Q&A)</td>
+        <td>100명 × 20회 × $0.0002 = $0.40/일</td>
+        <td>캐싱 30% 히트 시 $0.28/일</td>
+        <td>~30%</td>
+        <td class="impact-med">MEDIUM</td>
+      </tr>
+      <tr>
+        <td>Supabase DB 쿼리</td>
+        <td>동기화 1,000청크 → 1,000 RPC</td>
+        <td>배치 함수 1회 호출</td>
+        <td>~99%</td>
+        <td class="impact-high">HIGH</td>
+      </tr>
+      <tr>
+        <td>Notion API 호출</td>
+        <td>페이지별 토큰 조회 N회</td>
+        <td>1회 조회 후 재사용</td>
+        <td>~99%</td>
+        <td class="impact-high">HIGH</td>
+      </tr>
+      <tr>
+        <td>Upstash Redis</td>
+        <td>rate limit만 사용</td>
+        <td>임베딩 캐시 추가 시 비용↑</td>
+        <td>+$2~5/월</td>
+        <td class="impact-low">LOW</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- 우선순위 로드맵 -->
+  <div class="section-title">수정 우선순위 로드맵</div>
+  <div class="roadmap">
+    <div class="roadmap-col p0">
+      <h3>P0 — 즉시</h3>
+      <div class="subtitle">보안 사고 방지</div>
+      <div class="roadmap-item">사용자별 암호화 키 파생</div>
+      <div class="roadmap-item">decrypt() 입력 길이 검증</div>
+      <div class="roadmap-item">OAuth state에 userId 바인딩</div>
+      <div class="roadmap-item">Notion 429 지수 백오프</div>
+      <div class="roadmap-item">빈 컨텍스트 Claude 호출 차단</div>
+    </div>
+    <div class="roadmap-col p1">
+      <h3>P1 — 배포 전</h3>
+      <div class="subtitle">성능 / 안정성</div>
+      <div class="roadmap-item">엣지 계산 배치 SQL 전환</div>
+      <div class="roadmap-item">그래프 API DB 집계로 변경</div>
+      <div class="roadmap-item">processPage 토큰 재사용</div>
+      <div class="roadmap-item">API 에러 메시지 일반화</div>
+      <div class="roadmap-item">Voyage 재시도 로직 추가</div>
+    </div>
+    <div class="roadmap-col p2">
+      <h3>P2 — 운영 중</h3>
+      <div class="subtitle">비용 최적화</div>
+      <div class="roadmap-item">쿼리 임베딩 Redis 캐싱</div>
+      <div class="roadmap-item">Claude 응답 TTL 캐싱</div>
+      <div class="roadmap-item">Notion 토큰 만료 감지</div>
+      <div class="roadmap-item">QStash 실패 재시도 큐</div>
+      <div class="roadmap-item">OAuth start Rate limit</div>
+    </div>
+  </div>
+
+</div>
+
+<div class="footer">
+  Synaptic Security Report · 자동 생성 · 2026-04-14
+</div>
+
+</body>
+</html>

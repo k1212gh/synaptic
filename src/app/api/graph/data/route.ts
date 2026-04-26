@@ -2,13 +2,6 @@ import { NextResponse } from "next/server";
 import { createServerClient } from "@/lib/db/server";
 
 type PageRow = { id: string; title: string | null };
-type EdgeRow = {
-  from_chunk_id: string;
-  to_chunk_id: string;
-  similarity: number;
-  chunks_from: { page_id: string } | null;
-  chunks_to: { page_id: string } | null;
-};
 
 export async function GET() {
   const supabase = await createServerClient();

@@ -35,7 +35,7 @@ export default function SettingsPage() {
     setDisconnecting(true);
     await fetch("/api/auth/notion/disconnect", { method: "DELETE" });
     setDisconnecting(false);
-    router.push("/app/connect");
+    router.push("/connect");
   }
 
   async function handleLogout() {

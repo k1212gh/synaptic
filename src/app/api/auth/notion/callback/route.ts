@@ -83,5 +83,5 @@ export async function GET(req: NextRequest) {
   }
 
   await logInfo("auth", "notion_oauth_complete", { userId: user.id });
-  return NextResponse.redirect(`${env.NEXT_PUBLIC_APP_URL}/app/onboarding`);
+  return NextResponse.redirect(`${env.NEXT_PUBLIC_APP_URL}/graph`);
 }

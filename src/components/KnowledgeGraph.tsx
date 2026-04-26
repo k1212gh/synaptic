@@ -21,6 +21,9 @@ export default function KnowledgeGraph() {
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] });
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [loading, setLoading] = useState(true);
+  const [size, setSize] = useState({ width: 800, height: 600 });
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -32,6 +35,37 @@ export default function KnowledgeGraph() {
       })
       .catch(() => setLoading(false));
   }, []);
+
+  async function handleSync() {
+    setSyncing(true);
+    setSyncMsg("");
+    try {
+      const res = await fetch("/api/sync/start", { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        setSyncMsg(
+          `${data.queued ?? 0}개 페이지 동기화 시작 (전체 ${data.total ?? 0}개). 잠시 후 새로고침하세요.`
+        );
+      } else {
+        setSyncMsg(`오류: ${data.error ?? res.status}`);
+      }
+    } catch (err) {
+      setSyncMsg(`네트워크 오류: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const update = () =>
+      setSize({ width: el.clientWidth, height: el.clientHeight });
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [loading, graphData.nodes.length]);
 
   if (loading) {
     return (
@@ -45,12 +79,15 @@ export default function KnowledgeGraph() {
     return (
       <div className="flex flex-col items-center justify-center h-96 text-center">
         <p className="text-gray-500 text-sm mb-4">아직 동기화된 데이터가 없습니다.</p>
-        <a
-          href="/api/sync/start"
-          className="px-4 py-2 bg-black text-white text-sm rounded-lg hover:bg-gray-800 transition-colors"
+        <button
+          type="button"
+          onClick={handleSync}
+          disabled={syncing}
+          className="px-4 py-2 bg-black text-white text-sm rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50"
         >
-          지금 동기화하기
-        </a>
+          {syncing ? "동기화 시작 중..." : "지금 동기화하기"}
+        </button>
+        {syncMsg && <p className="text-xs text-gray-500 mt-3 max-w-sm">{syncMsg}</p>}
       </div>
     );
   }
@@ -65,8 +102,8 @@ export default function KnowledgeGraph() {
         linkWidth={(link) => (link as Link).similarity * 3}
         onNodeClick={(node) => setSelectedNode(node as Node)}
         backgroundColor="#030712"
-        width={containerRef.current?.clientWidth ?? 800}
-        height={containerRef.current?.clientHeight ?? 600}
+        width={size.width}
+        height={size.height}
       />
       {selectedNode && (
         <div className="absolute top-4 right-4 bg-white rounded-xl shadow-lg p-4 w-64">

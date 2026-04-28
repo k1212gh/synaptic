@@ -4,6 +4,8 @@ import { processPage } from "@/lib/sync/processPage";
 export interface SyncJob {
   pageId: string;
   userId: string;
+  title?: string | null;
+  url?: string | null;
 }
 
 interface QueueDriver {
@@ -15,9 +17,11 @@ interface QueueDriver {
 const directDriver: QueueDriver = {
   async enqueue(jobs) {
     // 응답은 즉시 반환하고 처리는 백그라운드에서
-    Promise.allSettled(jobs.map((j) => processPage(j.pageId, j.userId))).catch(
-      () => {}
-    );
+    Promise.allSettled(
+      jobs.map((j) =>
+        processPage(j.pageId, j.userId, { title: j.title, url: j.url })
+      )
+    ).catch(() => {});
     return { queued: jobs.length, total: jobs.length };
   },
 };

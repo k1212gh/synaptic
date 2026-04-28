@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { env } from "@/lib/env";
-import { encrypt } from "@/lib/crypto/token";
+import { encryptForUser } from "@/lib/crypto/token";
 import { createServerClient, createServiceClient } from "@/lib/db/server";
 import { logInfo, logWarn, logError } from "@/lib/logger";
 
@@ -9,17 +9,41 @@ export async function GET(req: NextRequest) {
   const code = req.nextUrl.searchParams.get("code");
   const state = req.nextUrl.searchParams.get("state");
   const cookieStore = await cookies();
-  const savedState = cookieStore.get("notion_oauth_state")?.value;
+  const savedCookie = cookieStore.get("notion_oauth_state")?.value;
 
-  // CSRF 검증
-  if (!code || !state || state !== savedState) {
+  // 쿠키는 `nonce.userId` 형태. nonce는 state로 검증, userId는 현재 세션과 비교.
+  const [savedNonce, savedUserId] = (savedCookie ?? "").split(".");
+
+  // 쿠키는 시도와 무관하게 항상 1회용으로 즉시 폐기 (재사용 공격 방지)
+  cookieStore.delete("notion_oauth_state");
+
+  if (!code || !state || !savedNonce || state !== savedNonce) {
     await logWarn("security", "notion_oauth_csrf_fail", {
       hasCode: !!code,
       hasState: !!state,
+      hasCookie: !!savedNonce,
     });
     return NextResponse.json({ error: "ERR_INVALID_STATE" }, { status: 400 });
   }
-  cookieStore.delete("notion_oauth_state");
+
+  // 현재 세션 사용자 확인
+  const supabase = await createServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.redirect(`${env.NEXT_PUBLIC_APP_URL}/login`);
+  }
+
+  // state에 묶인 userId가 현재 세션 userId와 같아야 함 (세션 하이재킹 차단)
+  if (savedUserId !== user.id) {
+    await logWarn("security", "notion_oauth_user_mismatch", {
+      cookieUserId: savedUserId,
+      sessionUserId: user.id,
+    });
+    return NextResponse.json({ error: "ERR_USER_MISMATCH" }, { status: 400 });
+  }
 
   // Notion 토큰 교환
   const basic = Buffer.from(
@@ -55,23 +79,13 @@ export async function GET(req: NextRequest) {
     bot_id: string;
   };
 
-  // 쿠키 기반 클라이언트로 현재 로그인 사용자 확인
-  const supabase = await createServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.redirect(`${env.NEXT_PUBLIC_APP_URL}/login`);
-  }
-
   // 서비스 롤로 Notion 토큰 저장 (RLS 우회)
   const serviceClient = createServiceClient();
   const { error } = await serviceClient.from("users").upsert({
     id: user.id,
     email: user.email!,
     notion_workspace_id: data.workspace_id,
-    notion_access_token_encrypted: encrypt(data.access_token),
+    notion_access_token_encrypted: encryptForUser(data.access_token, user.id),
     notion_bot_id: data.bot_id,
   });
 

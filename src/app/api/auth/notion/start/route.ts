@@ -2,12 +2,27 @@ import { NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { env } from "@/lib/env";
 import { cookies } from "next/headers";
-import { logInfo } from "@/lib/logger";
+import { createServerClient } from "@/lib/db/server";
+import { logInfo, logWarn } from "@/lib/logger";
 
 export async function GET() {
-  const state = crypto.randomBytes(16).toString("hex");
+  const supabase = await createServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  (await cookies()).set("notion_oauth_state", state, {
+  if (!user) {
+    await logWarn("auth", "notion_oauth_start_unauth");
+    return NextResponse.redirect(
+      `${env.NEXT_PUBLIC_APP_URL}/login?next=/connect`
+    );
+  }
+
+  const nonce = crypto.randomBytes(16).toString("hex");
+  // 쿠키엔 nonce + userId, Notion으로는 nonce만 보냄
+  const cookieValue = `${nonce}.${user.id}`;
+
+  (await cookies()).set("notion_oauth_state", cookieValue, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
@@ -15,7 +30,7 @@ export async function GET() {
     path: "/",
   });
 
-  await logInfo("auth", "notion_oauth_start");
+  await logInfo("auth", "notion_oauth_start", { userId: user.id });
 
   const url = new URL("https://api.notion.com/v1/oauth/authorize");
   url.searchParams.set("client_id", env.NOTION_CLIENT_ID);
@@ -25,7 +40,7 @@ export async function GET() {
     "redirect_uri",
     `${env.NEXT_PUBLIC_APP_URL}/api/auth/notion/callback`
   );
-  url.searchParams.set("state", state);
+  url.searchParams.set("state", nonce);
 
   return NextResponse.redirect(url.toString());
 }

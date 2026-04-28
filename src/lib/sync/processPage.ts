@@ -13,7 +13,8 @@ export type ProcessResult =
 
 export async function processPage(
   pageId: string,
-  userId: string
+  userId: string,
+  meta: { title?: string | null; url?: string | null } = {}
 ): Promise<ProcessResult> {
   const elapsed = startTimer();
   const serviceClient = createServiceClient();
@@ -28,28 +29,29 @@ export async function processPage(
     return { status: "error", pageId, error: "ERR_NO_TOKEN" };
   }
 
-  const notionClient = getNotionClient(userData.notion_access_token_encrypted);
+  const notionClient = getNotionClient(userData.notion_access_token_encrypted, userId);
   const pageText = await getPageText(notionClient, pageId);
   const newHash = crypto.createHash("sha256").update(pageText).digest("hex");
 
-  const { data: existingPage } = await serviceClient
+  // 1) 이전 hash 조회 (메타 업데이트 전 비교용)
+  const { data: existing } = await serviceClient
     .from("pages")
     .select("id, content_hash")
     .eq("user_id", userId)
     .eq("notion_page_id", pageId)
     .maybeSingle();
 
-  if (existingPage?.content_hash === newHash) {
-    await logInfo("sync", "sync_page_skipped", { userId, pageId });
-    return { status: "skipped", pageId };
-  }
+  const unchanged = existing?.content_hash === newHash;
 
+  // 2) 메타(제목/URL)는 항상 최신화. 본문 hash도 함께 upsert.
   const { data: upsertedPage, error: pageError } = await serviceClient
     .from("pages")
     .upsert(
       {
         user_id: userId,
         notion_page_id: pageId,
+        title: meta.title ?? null,
+        url: meta.url ?? null,
         content_hash: newHash,
         last_synced_at: new Date().toISOString(),
       },
@@ -64,6 +66,12 @@ export async function processPage(
       pageId,
     });
     return { status: "error", pageId, error: "ERR_PAGE_UPSERT" };
+  }
+
+  // 3) 본문이 안 바뀌었으면 청크는 그대로 두고 종료
+  if (unchanged) {
+    await logInfo("sync", "sync_page_skipped", { userId, pageId });
+    return { status: "skipped", pageId };
   }
 
   await serviceClient.from("chunks").delete().eq("page_id", upsertedPage.id);

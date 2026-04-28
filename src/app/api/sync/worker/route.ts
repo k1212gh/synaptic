@@ -6,6 +6,8 @@ import { logInfo, logError } from "@/lib/logger";
 const bodySchema = z.object({
   pageId: z.string().min(1),
   userId: z.string().uuid(),
+  title: z.string().nullable().optional(),
+  url: z.string().nullable().optional(),
 });
 
 // QUEUE_DRIVER=qstash 일 때 QStash가 이 엔드포인트를 호출
@@ -15,8 +17,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "ERR_INVALID_INPUT" }, { status: 400 });
   }
 
-  const { pageId, userId } = parsed.data;
-  const result = await processPage(pageId, userId);
+  const { pageId, userId, title, url } = parsed.data;
+  const result = await processPage(pageId, userId, { title, url });
 
   if (result.status === "error") {
     await logError("sync", "sync_page_fail", result.error, {

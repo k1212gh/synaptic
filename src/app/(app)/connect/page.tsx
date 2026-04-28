@@ -1,4 +1,24 @@
-export default function ConnectPage() {
+import { redirect } from "next/navigation";
+import { createServerClient, createServiceClient } from "@/lib/db/server";
+
+export default async function ConnectPage() {
+  const supabase = await createServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (user) {
+    const service = createServiceClient();
+    const { data } = await service
+      .from("users")
+      .select("notion_access_token_encrypted")
+      .eq("id", user.id)
+      .maybeSingle();
+    if (data?.notion_access_token_encrypted) {
+      redirect("/graph");
+    }
+  }
+
   return (
     <main className="max-w-md mx-auto mt-20 text-center">
       <h1 className="text-2xl font-bold mb-3">노션 워크스페이스 연결</h1>

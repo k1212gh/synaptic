@@ -1,4 +1,5 @@
 import Link from "next/link";
+import NavSyncButton from "@/components/NavSyncButton";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -14,6 +15,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <Link href="/settings" className="hover:text-gray-900 transition-colors">
             설정
           </Link>
+          <NavSyncButton />
         </div>
       </nav>
       <div className="p-6">{children}</div>

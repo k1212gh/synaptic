@@ -12,16 +12,39 @@ interface QueueDriver {
   enqueue(jobs: SyncJob[]): Promise<{ queued: number; total: number }>;
 }
 
+// 동시 처리 한도. Notion 3 req/s + Voyage rate limit 고려해 보수적으로.
+const DIRECT_CONCURRENCY = Number(process.env.SYNC_CONCURRENCY ?? "4");
+
+// 풀 워커: jobs를 순차 소비하는 worker를 N개 띄움.
+async function runWithConcurrency<T>(
+  jobs: T[],
+  worker: (job: T) => Promise<unknown>,
+  limit: number
+): Promise<void> {
+  let cursor = 0;
+  const next = async (): Promise<void> => {
+    const idx = cursor++;
+    if (idx >= jobs.length) return;
+    try {
+      await worker(jobs[idx]);
+    } catch {
+      // 개별 실패는 삼키고 다음 작업으로
+    }
+    return next();
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, jobs.length) }, next));
+}
+
 // ── Direct 드라이버 (로컬/VPS) ──────────────────────────────────────────────
-// 큐 없이 백그라운드에서 바로 처리. fire-and-forget.
+// 큐 없이 백그라운드에서 처리. 동시성 제한으로 외부 API rate limit 보호.
 const directDriver: QueueDriver = {
   async enqueue(jobs) {
-    // 응답은 즉시 반환하고 처리는 백그라운드에서
-    Promise.allSettled(
-      jobs.map((j) =>
-        processPage(j.pageId, j.userId, { title: j.title, url: j.url })
-      )
-    ).catch(() => {});
+    // 응답은 즉시 반환하고 처리는 백그라운드에서 (fire-and-forget)
+    void runWithConcurrency(
+      jobs,
+      (j) => processPage(j.pageId, j.userId, { title: j.title, url: j.url }),
+      DIRECT_CONCURRENCY
+    );
     return { queued: jobs.length, total: jobs.length };
   },
 };

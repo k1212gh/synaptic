@@ -41,3 +41,6 @@ yarn-error.log*
 next-env.d.ts
 dev_server.log
 start_server.bat
+
+# Claude Code local settings (per-machine)
+.claude/settings.local.json

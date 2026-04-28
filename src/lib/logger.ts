@@ -72,12 +72,32 @@ async function persistToDB(entry: LogEntry): Promise<void> {
   }
 }
 
-// 핵심 log 함수
-export async function log(entry: LogEntry): Promise<void> {
-  writeStdout(entry);
-  if (shouldPersistToDB(entry)) {
-    await persistToDB(entry);
+// Sentry 전송 (error/fatal만, DSN 있을 때만)
+async function sendToSentry(entry: LogEntry, originalError?: unknown): Promise<void> {
+  if (entry.level !== "error" && entry.level !== "fatal") return;
+  if (!process.env.SENTRY_DSN) return;
+  try {
+    const Sentry = await import("@sentry/nextjs");
+    Sentry.withScope((scope) => {
+      scope.setTag("category", entry.category);
+      scope.setTag("event", entry.event);
+      if (entry.userId) scope.setUser({ id: entry.userId });
+      if (entry.data) scope.setContext("data", entry.data);
+      const err = originalError ?? new Error(entry.error ?? entry.event);
+      Sentry.captureException(err);
+    });
+  } catch {
+    // Sentry 실패는 조용히 무시
   }
+}
+
+// 핵심 log 함수
+export async function log(entry: LogEntry, originalError?: unknown): Promise<void> {
+  writeStdout(entry);
+  await Promise.allSettled([
+    shouldPersistToDB(entry) ? persistToDB(entry) : Promise.resolve(),
+    sendToSentry(entry, originalError),
+  ]);
 }
 
 // ── 편의 함수 ────────────────────────────────────────────────────────────────
@@ -109,7 +129,10 @@ export function logError(
   const { userId, ...rest } = data ?? {};
   const errorMessage =
     error instanceof Error ? error.message : String(error);
-  return log({ level: "error", category, event, userId, data: rest, error: errorMessage });
+  return log(
+    { level: "error", category, event, userId, data: rest, error: errorMessage },
+    error
+  );
 }
 
 // API 호출 타이머 헬퍼
